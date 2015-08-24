@@ -2,13 +2,15 @@ extern crate memcmp;
 
 use std::io::prelude::*;
 use std::io;
+use std::sync::mpsc::sync_channel;
+use std::thread;
 
 use memcmp::Memcmp;
 
 
 fn main() {
-    let mut r = io::stdin();
-    search(&mut r).unwrap();
+    let r = io::stdin();
+    search(r).unwrap();
 }
 
 fn read_exact<R: Read>(r: &mut R, mut buf: &mut [u8]) -> io::Result<usize> {
@@ -23,30 +25,42 @@ fn read_exact<R: Read>(r: &mut R, mut buf: &mut [u8]) -> io::Result<usize> {
     Ok(pos)
 }
 
-fn search<R: Read>(r: &mut R) -> io::Result<()> {
+fn search<R: Read+Send+'static>(mut r: R) -> io::Result<()> {
     let pattern = b"mdat";
 
-    let read_len = 1024 * 1024;
+    let queue_len = 3;
+    let read_len = 2 * 1024 * 1024;
     let buf_len = read_len + pattern.len();
-    let mut buf = Vec::with_capacity(buf_len);
-    unsafe { buf.set_len(buf_len) };
+
+    let (empty_tx, empty_rx) = sync_channel(queue_len);
+    let (full_tx, full_rx) = sync_channel(queue_len);
+    for _ in 0..queue_len {
+        let mut buf = Vec::with_capacity(buf_len);
+        unsafe { buf.set_len(buf_len) };
+        empty_tx.send(buf).unwrap();
+    }
+
+    thread::spawn(move || {
+        for mut buf in empty_rx {
+            let c = read_exact(&mut r, &mut buf[..read_len]).unwrap();
+            if c == 0 {
+                break;
+            }
+            unsafe { buf.set_len(c) };
+            full_tx.send(buf).unwrap();
+        }
+    });
 
     let mut offset = 0u64;
-    loop {
-        let c = try!(read_exact(r, &mut buf[..read_len]));
-        if c == 0 {
-            break;
-        }
-        let buf = &buf[..c];
-        
+    for buf in full_rx {
         for i in 0..(buf.len() - pattern.len()) {
             if pattern.memcmp(&buf[i..(i + pattern.len())]) {
                 let match_pos = offset + i as u64;
                 println!("match at {}", match_pos);
             }
         }
-
-        offset += c as u64;
+        offset += buf.len() as u64;
+        empty_tx.send(buf).unwrap();
     }
 
     Ok(())
