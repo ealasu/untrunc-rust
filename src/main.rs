@@ -60,7 +60,7 @@ fn search<R: Read+Send+'static>(mut r: R) -> io::Result<()> {
             }
         }
         offset += buf.len() as u64;
-        empty_tx.send(buf).unwrap();
+        let _ = empty_tx.send(buf);
     }
 
     Ok(())
