@@ -7,8 +7,6 @@ use memcmp::Memcmp;
 
 
 fn main() {
-    //let input = env::args().nth(1).unwrap();
-    //let mut r = File::open(input).unwrap();
     let mut r = io::stdin();
     search(&mut r).unwrap();
 }
